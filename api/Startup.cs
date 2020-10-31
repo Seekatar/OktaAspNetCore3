@@ -1,8 +1,5 @@
-using System;
 using System.Collections.Generic;
-using System.Linq;
 using System.Security.Claims;
-using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Builder;
@@ -13,78 +10,9 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 using static System.Console;
 namespace api
 {
-    class GroupRequirement : IAuthorizationRequirement
-    {
-
-    }
-    class GroupPolicyHandler : AuthorizationHandler<GroupRequirement>
-    {
-        private readonly OktaSettings _okta;
-
-        public GroupPolicyHandler(IOptions<OktaSettings> okta)
-        {
-            _okta = okta.Value;
-        }
-        const string ScopeClaimType = "http://schemas.microsoft.com/identity/claims/scope";
-
-        protected override Task HandleRequirementAsync(AuthorizationHandlerContext context, GroupRequirement requirement)
-        {
-            WriteLine($"In GroupPolicyHandler with {context.User.Claims.Count()} claims");
-            WriteLine($"   Okta Issuer is {_okta.Issuer}");
-            foreach (var c in context.User.Claims)
-            {
-                if (c.Type == ScopeClaimType) {
-                    WriteLine($"   scope: {c.Value}");
-                } else if (c.Type == "clients") {
-                    WriteLine($"   {c.ToString()}");
-                }
-            }
-
-            var client = context.User.Claims.SingleOrDefault(c => c.Type == ScopeClaimType && c.Value.StartsWith(_okta.ScopePrefix))?.Value;
-            if (client != null)
-            {
-                /*
-                    Examples
-                    _okta.ScopePrefix = "casualty.datacapture.client"
-                    _okta.GroupPrefix = "CCC-DataCapture-Client"
-                    scope = casualty.datacapture.client.usaa
-                    group = CCC-DataCapture-Client-USAA-Group
-                */
-                var toMatch = $"{_okta.GroupPrefix}-{client.Replace(_okta.ScopePrefix,"").Trim('.').Replace('.','-')}-group".ToLowerInvariant();
-                if (context.User.Claims.Any( c => c.Type == "clients"
-                                             && c.Value.ToLowerInvariant() == toMatch))
-                {
-                    context.Succeed(requirement);
-                }
-                else
-                {
-                    WriteLine($"Didn't find group match for scope {client} ({toMatch})");
-                }
-            }
-            else
-            {
-                WriteLine($"Didn't get only one scope with prefix {_okta.ScopePrefix}");
-            }
-
-            return Task.CompletedTask;
-        }
-    }
-    public class OktaSettings
-    {
-        public string ScopePrefix { get; set; }
-        public string GroupPrefix { get; set; }
-        public string Issuer { get; set; }
-        public string Audience { get; set; }
-        public override string ToString()
-        {
-            return $"Iss: '{Issuer}' Aud: '{Audience}'";
-        }
-    }
-
     public class Startup
     {
         public Startup(IConfiguration configuration)
@@ -128,7 +56,7 @@ namespace api
 
             services.AddAuthorization(options =>
             {
-                options.AddPolicy("MyPolicy", policy => policy.Requirements.Add(new GroupRequirement()));
+                options.AddPolicy(GroupRequirement.PolicyName, policy => policy.Requirements.Add(new GroupRequirement()));
             });
             services.AddSingleton<IAuthorizationHandler, GroupPolicyHandler>();
             WriteLine("Added GroupPolicyHandler singleton");
@@ -142,6 +70,7 @@ namespace api
                 app.UseDeveloperExceptionPage();
             }
 
+            // remove from sample otherwise always get 401
             // app.UseHttpsRedirection();
 
             app.UseRouting();
